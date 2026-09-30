@@ -311,7 +311,9 @@ android {
 
     moh_zanzibar_training {
       dimension = 'brand'
-      applicationId = 'org.medicmobile.webapp.mobile.moh_zanzibar_training'
+      // JnA Dev fork: distinct applicationId so this can coexist on-device
+      // with the official Darasa app (which uses the upstream id).
+      applicationId = 'org.medicmobile.webapp.mobile.jna_dev'
     }
 
     moh_zanzibar {
