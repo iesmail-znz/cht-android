@@ -1,9 +1,7 @@
 name: Build JnA Dev APK
 # Builds a DEBUG-signed APK of the moh_zanzibar_training flavor.
-# Debug signing needs no secrets (Android's default debug keystore is used),
-# so this workflow runs cleanly on a fork.
-#
-# Triggered on push of the jna-dev-apk branch and manually via workflow_dispatch.
+# A debug keystore is generated in CI so gradle can sign the output —
+# Android Studio does this locally on first run; CI runners do not.
 on:
   push:
     branches: [jna-dev-apk]
@@ -19,22 +17,49 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: List assemble tasks (for logs)
-        run: ./gradlew tasks --all --console=plain 2>&1 | grep -i "assemble.*zanzibar" || true
+      - name: Generate Android debug keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          ls -la "$HOME/.android"
 
       - name: Build debug APK for moh_zanzibar_training
         run: |
-          ./gradlew assembleMoh_zanzibar_trainingDebug             || ./gradlew assembleMohZanzibarTrainingDebug             || ./gradlew assembleDebug
+          ./gradlew assembleMoh_zanzibar_trainingDebug \
+            || ./gradlew assembleMohZanzibarTrainingDebug \
+            || ./gradlew assembleDebug
 
       - name: Find and rename APK
         run: |
           set -e
           mkdir -p out
           apk=$(find . -type f -name '*moh_zanzibar_training*debug*.apk' | head -1)
-          if [ -z "$apk" ]; then apk=$(find . -type f -name '*.apk' | grep -i moh_zanzibar_training | head -1); fi
-          if [ -z "$apk" ]; then echo "No APK found" >&2; find . -type f -name '*.apk'; exit 1; fi
+          if [ -z "$apk" ]; then
+            apk=$(find . -type f -name '*.apk' | grep -i moh_zanzibar_training | head -1)
+          fi
+          if [ -z "$apk" ]; then
+            echo "No APK found" >&2; find . -type f -name '*.apk'; exit 1
+          fi
           cp "$apk" "out/cht-android-jna-dev-debug.apk"
+          echo "APK: $apk"
           ls -la out/
+
+      - name: Verify the APK is signed
+        run: |
+          echo "=== META-INF entries in the final APK ==="
+          unzip -l out/cht-android-jna-dev-debug.apk | grep META-INF | head -10
+          # A signed APK MUST have CERT.SF and a CERT.RSA/DSA/EC alongside MANIFEST.MF
+          if ! unzip -l out/cht-android-jna-dev-debug.apk | grep -q 'META-INF/CERT'; then
+            echo "APK is NOT signed — Android will refuse to install it" >&2
+            exit 2
+          fi
+          echo "APK is signed."
 
       - uses: actions/upload-artifact@v4
         with:
